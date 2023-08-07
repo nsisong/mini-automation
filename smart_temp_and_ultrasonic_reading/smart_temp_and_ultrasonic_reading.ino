@@ -2,13 +2,27 @@
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include <WiFiManager.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-#define bulb              2
-#define Socket_pin        0
-#define echo_pin          14
-#define trig_pin          12
+#define bulb              D2
+#define Socket_pin        D1
+#define echo_pin          D5
+#define trig_pin          D8
 
-#define temp_pin          2
+
+
+
+/************************* Dallas temp Setup *********************************/
+
+// GPIO where the DS18B20 is connected to
+const int oneWireBus = D7;     
+
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(oneWireBus);
+
+// Pass our oneWire reference to Dallas Temperature sensor 
+DallasTemperature sensors(&oneWire);
 
 
 /************************* Adafruit.io Setup *********************************/
@@ -16,7 +30,7 @@
 #define AIO_SERVER      "io.adafruit.com" //Adafruit Server
 #define AIO_SERVERPORT  1883                   
 #define AIO_USERNAME    "mkut22"            // Username
-#define AIO_KEY         "aio_AHJl987nxr6gTAAkpdH6EclPV2Qj"   // Auth Key
+#define AIO_KEY         "aio_TvPX83aL7pHNa35CPuKhfFK0YA07"   // Auth Key
 
 //WIFI CLIENT
 WiFiClient client;
@@ -30,11 +44,13 @@ Adafruit_MQTT_Publish ultra = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME"/feeds/u
 
 
 void MQTT_connect();
-void ultrasonic_sens();
-void temp_sens();
+float ultrasonic_sens();
+float temp_sens();
 
 void setup() {
   Serial.begin(115200);
+
+  sensors.begin();
 
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
@@ -43,6 +59,7 @@ void setup() {
   //sets timeout until configuration portal gets turned off
   //useful to make it all retry or go to sleep
   //in seconds
+
   wifiManager.setConfigPortalTimeout(180);
   
   //fetches ssid and pass and tries to connect
@@ -61,19 +78,20 @@ void setup() {
   Serial.println("connected...yeey :)");
 
   pinMode(bulb,  OUTPUT);
-  pinMode(Socket,  OUTPUT);
+  pinMode(Socket_pin,  OUTPUT);
+  pinMode(echo_pin, INPUT);
+  pinMode(trig_pin, OUTPUT);
 
  
   mqtt.subscribe(&Light);
   mqtt.subscribe(&socket);
-  mqtt.publish(&temp);
-  mqtt.publish(&ultra);
+
 }
 
 
 
 void loop() {
- 
+
   MQTT_connect();
   
 
@@ -84,10 +102,22 @@ void loop() {
       Serial.println((char *)Light.lastread);
       int Light_State = atoi((char *)Light.lastread);
       digitalWrite(bulb, Light_State);
-  }
+    }
+
+    if (subscription == &socket) {
+      Serial.print(F("Got: "));
+      Serial.println((char *)socket.lastread);
+      int socket_State = atoi((char *)socket.lastread);
+      digitalWrite(Socket_pin, socket_State);
+    }
 
   }
+
+  temp.publish(temp_sens());
+  ultra.publish(ultrasonic_sens());
+
 }
+
 
 void MQTT_connect() {
   int8_t ret;
@@ -115,9 +145,23 @@ void MQTT_connect() {
 }
 
 
-void ultrasonic_sens(){
+float ultrasonic_sens(){
+  digitalWrite(trig_pin, LOW);
+  delayMicroseconds(2);
+  
+  digitalWrite(trig_pin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig_pin, LOW);
+  
+  unsigned long pulseDuration = pulseIn(echo_pin, HIGH);
+  
+  float distance = pulseDuration * 0.034 / 2;
+  return distance;
 
 }
-void temp_sens(){
-
+float temp_sens(){
+  sensors.requestTemperatures(); 
+  float temperatureC = sensors.getTempCByIndex(0);
+  delay(1000);
+  return temperatureC;
 }
